@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#f4f6fa;color:#1a1a2e;min-height:100vh;padding:2rem}
+h1{font-size:22px;font-weight:500;color:#1F3864;margin-bottom:.25rem}
+.subtitle{font-size:13px;color:#888;margin-bottom:2rem}
+.stitle{font-size:11px;font-weight:600;color:#1F3864;text-transform:uppercase;letter-spacing:.07em;margin:2rem 0 .75rem}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:1rem}
+.card{background:#fff;border:0.5px solid #dde3f0;border-radius:12px;padding:1rem 1.25rem}
+.card-label{font-size:12px;color:#888;margin-bottom:6px}
+.card-value{font-size:20px;font-weight:500;color:#1F3864;white-space:nowrap}
+.card-sub{font-size:12px;color:#888;margin-top:4px}
+.up{color:#1a7a4a}.down{color:#c0392b}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:1.5rem}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:1.5rem}
+.box{background:#fff;border:0.5px solid #dde3f0;border-radius:12px;padding:1.25rem}
+.box-wide{background:#fff;border:0.5px solid #dde3f0;border-radius:12px;padding:1.25rem;margin-bottom:1.5rem}
+.btitle{font-size:13px;font-weight:500;color:#1F3864;margin-bottom:.75rem}
+.leg{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;font-size:12px;color:#555}
+.leg span{display:flex;align-items:center;gap:5px}
+.ldot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.risk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:1.5rem}
+.rc{border-radius:12px;padding:1rem 1.25rem;border:0.5px solid transparent}
+.ra{background:#fdf0ee;border-color:#f5c4b3}
+.rm{background:#fdf6e3;border-color:#fac775}
+.rb{background:#eaf6f0;border-color:#9FE1CB}
+.rl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.ra .rl{color:#993C1D}.rm .rl{color:#854F0B}.rb .rl{color:#0F6E56}
+.rv{font-size:18px;font-weight:500;color:#1F3864}
+.rp{font-size:12px;color:#888;margin-top:3px}
+.ri{font-size:11px;color:#aaa;margin-top:5px}
+.fx-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.5rem}
+.fxc{background:#fff;border:0.5px solid #dde3f0;border-radius:12px;padding:1rem 1.25rem}
+.bar-bg{background:#eef1f8;border-radius:4px;height:7px;margin:10px 0 6px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px}
+.err{background:#fff3f3;border:0.5px solid #f5c4b3;border-radius:12px;padding:1.5rem;color:#993C1D;font-size:13px;margin-top:1rem}
+@media(max-width:640px){.row2,.row3,.risk-grid,.fx-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<h1>Portfolio Dashboard</h1>
+<p class="subtitle" id="info">Carregando dados...</p>
+<div id="err" class="err" style="display:none"></div>
+<div id="dash" style="display:none"></div>
+
+<script>
+const SHEET_ID = '1ziTiTA-Vo990apseA0AZmekMZT82YZKefYMOxaWuYJA';
+
+const C = {
+  crypto:'#1F3864', acoes:'#378ADD', rf:'#1D9E75',
+  fiis:'#EF9F27',   caixa:'#888780',
+  btc:'#F7931A', sol:'#9945FF', eth:'#627EEA',
+  alts:'#E84142', stable:'#26A17B',
+  xpml:'#1F3864', xplg:'#378ADD', kncr:'#1D9E75', bthf:'#EF9F27',
+};
+
+function fUSD(v){ return '$'+Math.round(v).toLocaleString('pt-BR'); }
+function fBRL(v){ return 'R$'+Math.round(v).toLocaleString('pt-BR'); }
+function fPct(v){ return (v*100).toFixed(1)+'%'; }
+function pct(a,b){ return b>0?a/b:0; }
+
+function parseSheet(json, sheetName) {
+  const raw = json.replace(/^[^{]+/,'').replace(/[^}]+$/,'');
+  const obj = JSON.parse(raw);
+  return obj.table.rows;
+}
+
+function numVal(v) {
+  if (v === null || v === undefined) return 0;
+  return parseFloat(String(v).replace(/[^0-9.-]/g,'')) || 0;
+}
+
+async function fetchSheet(name) {
+  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(name)}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP '+r.status);
+  const txt = await r.text();
+  const raw = txt.replace(/^[^{]+/,'').replace(/[^}]+$/,'');
+  return JSON.parse(raw).table.rows;
+}
+
+function parsePortfolio(rows) {
+  return rows.map(r => {
+    const v = i => r.c[i] ? numVal(r.c[i].v) : 0;
+    const lbl = r.c[0] ? (r.c[0].f || String(r.c[0].v||'')) : '';
+    return { date:lbl, crypto:v(1), acoes:v(2), rf:v(3), fiis:v(4), caixa:v(5), total:v(6) };
+  }).filter(r => r.total > 0);
+}
+
+function parseLancamentos(rows) {
+  // Last row with data
+  const dataRows = rows.filter(r => r.c[0] && r.c[0].v);
+  if (!dataRows.length) return null;
+  const last = dataRows[dataRows.length - 1];
+  const v = i => last.c[i] ? numVal(last.c[i].v) : 0;
+  return {
+    btc: v(1), sol: v(2), eth: v(3), alts: v(4), stable: v(5),
+    mstrx: v(8), crclx: v(9), hoodx: v(10), coinx: v(11), etfs: v(12),
+    xpml: v(15), xplg: v(16), kncr: v(17), bthf: v(18),
+  };
+}
+
+function makeLegend(id, items) {
+  document.getElementById(id).innerHTML = items.map(([l,c,v,t]) =>
+    `<span><span class="ldot" style="background:${c}"></span>${l} ${fPct(pct(v,t))}</span>`
+  ).join('');
+}
+
+function render(portfolio, detail) {
+  const last = portfolio[portfolio.length-1];
+  const prev = portfolio.length>1 ? portfolio[portfolio.length-2] : null;
+  const diff = prev ? last.total-prev.total : 0;
+  const sign = diff>=0?'+':'';
+  const cls  = diff>=0?'up':'down';
+
+  document.getElementById('info').textContent =
+    'Última referência: '+last.date+' · '+portfolio.length+' meses · Fonte: Google Sheets';
+  document.getElementById('dash').style.display = 'block';
+
+  const dash = document.getElementById('dash');
+  dash.innerHTML = `
+    <p class="stitle">Snapshot atual</p>
+    <div class="cards">
+      <div class="card"><div class="card-label">Total portfólio</div><div class="card-value">${fUSD(last.total)}</div><div class="card-sub ${cls}">${sign}${fUSD(diff)} vs mês ant.</div></div>
+      <div class="card"><div class="card-label">Variação mensal</div><div class="card-value ${cls}">${sign}${fPct(prev&&prev.total?diff/prev.total:0)}</div><div class="card-sub">em USD</div></div>
+      <div class="card"><div class="card-label">Crypto</div><div class="card-value">${fUSD(last.crypto)}</div><div class="card-sub">${fPct(pct(last.crypto,last.total))}</div></div>
+      <div class="card"><div class="card-label">Ações USA</div><div class="card-value">${fUSD(last.acoes)}</div><div class="card-sub">${fPct(pct(last.acoes,last.total))}</div></div>
+      <div class="card"><div class="card-label">Renda Fixa</div><div class="card-value">${fUSD(last.rf)}</div><div class="card-sub">${fPct(pct(last.rf,last.total))}</div></div>
+      <div class="card"><div class="card-label">FIIs</div><div class="card-value">${fUSD(last.fiis)}</div><div class="card-sub">${fPct(pct(last.fiis,last.total))}</div></div>
+    </div>
+
+    <p class="stitle">Alocação por classe</p>
+    <div class="row2">
+      <div class="box">
+        <p class="btitle">Distribuição atual</p>
+        <div id="legDonut" class="leg"></div>
+        <div style="position:relative;height:210px"><canvas id="donut" role="img" aria-label="Distribuição do portfólio por classe"></canvas></div>
+      </div>
+      <div class="box">
+        <p class="btitle">Evolução total (USD)</p>
+        <div style="position:relative;height:250px"><canvas id="totalLine" role="img" aria-label="Evolução do portfólio total em USD"></canvas></div>
+      </div>
+    </div>
+
+    <p class="stitle">Composição detalhada — mês atual</p>
+    <div class="row3">
+      <div class="box">
+        <p class="btitle">Crypto por ativo</p>
+        <div id="legCrypto" class="leg"></div>
+        <div style="position:relative;height:190px"><canvas id="cryptoPie" role="img" aria-label="Distribuição de crypto por ativo"></canvas></div>
+      </div>
+      <div class="box">
+        <p class="btitle">Ações USA</p>
+        <div id="legAcoes" class="leg"></div>
+        <div style="position:relative;height:190px"><canvas id="acoesPie" role="img" aria-label="Distribuição de ações USA por ativo"></canvas></div>
+      </div>
+      <div class="box">
+        <p class="btitle">FIIs</p>
+        <div id="legFiis" class="leg"></div>
+        <div style="position:relative;height:190px"><canvas id="fiisPie" role="img" aria-label="Distribuição de FIIs por ativo"></canvas></div>
+      </div>
+    </div>
+
+    <p class="stitle">Perfil de risco</p>
+    <div class="risk-grid" id="riskCards"></div>
+
+    <p class="stitle">Exposição cambial</p>
+    <div class="fx-grid" id="fxCards"></div>
+
+    <p class="stitle">Evolução por classe (USD)</p>
+    <div class="box-wide">
+      <div id="legStack" class="leg"></div>
+      <div style="position:relative;height:280px"><canvas id="stack" role="img" aria-label="Evolução histórica por classe de ativo"></canvas></div>
+    </div>
+  `;
+
+  const labels = portfolio.map(d=>d.date);
+
+  // Donut
+  const dVals   = [last.crypto,last.acoes,last.rf,last.fiis,last.caixa];
+  const dLabels = ['Crypto','Ações USA','Renda Fixa','FIIs','Caixa USD'];
+  const dColors = [C.crypto,C.acoes,C.rf,C.fiis,C.caixa];
+  makeLegend('legDonut', dLabels.map((l,i)=>[l,dColors[i],dVals[i],last.total]));
+  new Chart(document.getElementById('donut'),{
+    type:'doughnut',
+    data:{labels:dLabels,datasets:[{data:dVals,backgroundColor:dColors,borderWidth:2,borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fUSD(ctx.raw)+' ('+fPct(pct(ctx.raw,last.total))+')'}}}},
+  });
+
+  // Total line
+  new Chart(document.getElementById('totalLine'),{
+    type:'line',
+    data:{labels,datasets:[{data:portfolio.map(d=>d.total),borderColor:'#1F3864',backgroundColor:'rgba(31,56,100,0.07)',fill:true,tension:0.35,pointRadius:4,pointBackgroundColor:'#1F3864'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'$'+Math.round(v/1000)+'k'},grid:{color:'#eef1f8'}},x:{ticks:{autoSkip:true,maxTicksLimit:6},grid:{display:false}}}},
+  });
+
+  // Crypto pie
+  if (detail) {
+    const cVals   = [detail.btc,detail.sol,detail.eth,detail.alts,detail.stable];
+    const cLabels = ['BTC','SOL','ETH','ALTs','STABLE'];
+    const cColors = [C.btc,C.sol,C.eth,C.alts,C.stable];
+    const cTotal  = cVals.reduce((a,b)=>a+b,0);
+    makeLegend('legCrypto', cLabels.map((l,i)=>[l,cColors[i],cVals[i],cTotal]));
+    new Chart(document.getElementById('cryptoPie'),{
+      type:'doughnut',
+      data:{labels:cLabels,datasets:[{data:cVals,backgroundColor:cColors,borderWidth:2,borderColor:'#fff'}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fUSD(ctx.raw)+' ('+fPct(pct(ctx.raw,cTotal))+')'}}}},
+    });
+
+    // Ações pie
+    const aVals   = [detail.mstrx,detail.crclx,detail.hoodx,detail.coinx,detail.etfs];
+    const aLabels = ['MSTRX','CRCLX','HOODX','COINX','ETFs Trad.'];
+    const aColors = ['#1F3864','#378ADD','#5BA3E0','#8CC4ED','#B8D9F5'];
+    const aTotal  = aVals.reduce((a,b)=>a+b,0);
+    makeLegend('legAcoes', aLabels.map((l,i)=>[l,aColors[i],aVals[i],aTotal]));
+    new Chart(document.getElementById('acoesPie'),{
+      type:'doughnut',
+      data:{labels:aLabels,datasets:[{data:aVals,backgroundColor:aColors,borderWidth:2,borderColor:'#fff'}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fUSD(ctx.raw)+' ('+fPct(pct(ctx.raw,aTotal))+')'}}}},
+    });
+
+    // FIIs pie
+    const fVals   = [detail.xpml,detail.xplg,detail.kncr,detail.bthf];
+    const fLabels = ['XPML','XPLG','KNCR','BTHF'];
+    const fColors = [C.xpml,C.xplg,C.kncr,C.bthf];
+    const fTotal  = fVals.reduce((a,b)=>a+b,0);
+    makeLegend('legFiis', fLabels.map((l,i)=>[l,fColors[i],fVals[i],fTotal]));
+    new Chart(document.getElementById('fiisPie'),{
+      type:'doughnut',
+      data:{labels:fLabels,datasets:[{data:fVals,backgroundColor:fColors,borderWidth:2,borderColor:'#fff'}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fBRL(ctx.raw)+' ('+fPct(pct(ctx.raw,fTotal))+')'}}}},
+    });
+  }
+
+  // Risco
+  const rA = last.crypto;
+  const rM = last.acoes + last.fiis;
+  const rB = last.rf + last.caixa;
+  document.getElementById('riskCards').innerHTML = `
+    <div class="rc ra"><div class="rl">Risco alto</div><div class="rv">${fUSD(rA)}</div><div class="rp">${fPct(pct(rA,last.total))} do portfólio</div><div class="ri">Crypto — HODL, Pools, DeFi</div></div>
+    <div class="rc rm"><div class="rl">Risco moderado</div><div class="rv">${fUSD(rM)}</div><div class="rp">${fPct(pct(rM,last.total))} do portfólio</div><div class="ri">Ações USA · FIIs</div></div>
+    <div class="rc rb"><div class="rl">Proteção</div><div class="rv">${fUSD(rB)}</div><div class="rp">${fPct(pct(rB,last.total))} do portfólio</div><div class="ri">Renda Fixa · Caixa USD</div></div>
+  `;
+
+  // FX
+  const usd = last.crypto + last.acoes + last.caixa;
+  const brl = last.rf + last.fiis;
+  document.getElementById('fxCards').innerHTML = `
+    <div class="fxc"><div class="card-label">Dolarizado (USD)</div><div class="card-value">${fUSD(usd)}</div><div class="bar-bg"><div class="bar-fill" style="width:${(pct(usd,last.total)*100).toFixed(1)}%;background:${C.acoes}"></div></div><div style="font-size:12px;color:#888">${fPct(pct(usd,last.total))} · Crypto + Ações + Caixa</div></div>
+    <div class="fxc"><div class="card-label">Atrelado ao BRL</div><div class="card-value">${fUSD(brl)}</div><div class="bar-bg"><div class="bar-fill" style="width:${(pct(brl,last.total)*100).toFixed(1)}%;background:${C.rf}"></div></div><div style="font-size:12px;color:#888">${fPct(pct(brl,last.total))} · Renda Fixa + FIIs</div></div>
+  `;
+
+  // Stacked
+  const sKeys   = ['crypto','acoes','rf','fiis','caixa'];
+  const sLabels = ['Crypto','Ações USA','Renda Fixa','FIIs','Caixa USD'];
+  const sColors = [C.crypto,C.acoes,C.rf,C.fiis,C.caixa];
+  makeLegend('legStack', sLabels.map((l,i)=>[l,sColors[i],1,1]));
+  new Chart(document.getElementById('stack'),{
+    type:'bar',
+    data:{labels,datasets:sKeys.map((k,i)=>({label:sLabels[i],data:portfolio.map(d=>d[k]),backgroundColor:sColors[i],stack:'s'}))},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{stacked:true,ticks:{autoSkip:true,maxTicksLimit:6},grid:{display:false}},y:{stacked:true,ticks:{callback:v=>'$'+Math.round(v/1000)+'k'},grid:{color:'#eef1f8'}}}},
+  });
+}
+
+(async () => {
+  try {
+    const [pRows, lRows] = await Promise.all([
+      fetchSheet('Portfólio'),
+      fetchSheet('Lançamentos'),
+    ]);
+    const portfolio = parsePortfolio(pRows);
+    const detail    = parseLancamentos(lRows);
+    render(portfolio, detail);
+  } catch(e) {
+    document.getElementById('err').style.display = 'block';
+    document.getElementById('err').textContent =
+      'Erro ao carregar dados. Verifique se a planilha está compartilhada como pública. Detalhe: '+e.message;
+    document.getElementById('info').textContent = 'Falha ao carregar.';
+  }
+})();
+</script>
+</body>
+</html>
